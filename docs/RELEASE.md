@@ -26,6 +26,8 @@ hooks:
 useTunnel: true
 ```
 
+**Important**: Make sure the version in `plugin.yaml` matches the version used in workflow dispatch parameters in `.github/workflows/release.yml`. When using the manual workflow trigger, the input version (e.g., `v0.2.2`) should correspond to the version in plugin.yaml (without the 'v' prefix).
+
 ### 2. Commit the Changes
 
 ```bash
