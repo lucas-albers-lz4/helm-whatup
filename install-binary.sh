@@ -5,7 +5,22 @@
 PROJECT_NAME="helm-whatup"
 PROJECT_GH="bacongobbler/$PROJECT_NAME"
 
-: ${HELM_PLUGIN_PATH:="$HELM_HOME/plugins/helm-whatup"}
+# Get plugin path from helm env if HELM_HOME not set
+if [ -z "$HELM_HOME" ]; then
+  HELM_PLUGINS=$(helm env | grep HELM_PLUGINS | cut -d'"' -f2)
+  if [ -n "$HELM_PLUGINS" ]; then
+    HELM_PLUGIN_PATH="$HELM_PLUGINS/helm-whatup"
+  else
+    HELM_PLUGIN_PATH="$(helm home)/plugins/helm-whatup"
+  fi
+else
+  HELM_PLUGIN_PATH="$HELM_HOME/plugins/helm-whatup"
+fi
+
+# Extract version from plugin.yaml if in the same directory
+if [ -f "plugin.yaml" ]; then
+  HELM_PLUGIN_VERSION=$(grep "version" plugin.yaml | cut -d'"' -f2)
+fi
 
 if [[ $SKIP_BIN_INSTALL == "1" ]]; then
   echo "Skipping binary install"
@@ -40,7 +55,7 @@ initOS() {
 # verifySupported checks that the os/arch combination is supported for
 # binary builds.
 verifySupported() {
-  local supported="linux-amd64\ndarwin-amd64"
+  local supported="linux-amd64\nlinux-arm64\ndarwin-amd64\ndarwin-arm64"
   if ! echo "${supported}" | grep -q "${OS}-${ARCH}"; then
     echo "No prebuild binary for ${OS}-${ARCH}."
     exit 1
@@ -54,7 +69,15 @@ verifySupported() {
 
 # getDownloadURL checks the latest available version.
 getDownloadURL() {
-  # Use the GitHub API to find the latest version for this project.
+  # If there's a local build for this architecture, use it
+  local local_file="_dist/helm-whatup-${HELM_PLUGIN_VERSION}-${OS}-${ARCH}.tar.gz"
+  if [ -f "$local_file" ]; then
+    echo "Using local build from $local_file"
+    DOWNLOAD_URL="file://$local_file"
+    return
+  fi
+
+  # Otherwise, use the GitHub API to find the latest version for this project.
   local latest_url="https://api.github.com/repos/$PROJECT_GH/releases/latest"
   if type "curl" > /dev/null; then
     DOWNLOAD_URL=$(curl -s $latest_url | grep $OS | awk '/\"browser_download_url\":/{gsub( /[,\"]/,"", $2); print $2}')
@@ -68,7 +91,9 @@ getDownloadURL() {
 downloadFile() {
   PLUGIN_TMP_FILE="/tmp/${PROJECT_NAME}.tgz"
   echo "Downloading $DOWNLOAD_URL"
-  if type "curl" > /dev/null; then
+  if [[ $DOWNLOAD_URL == file://* ]]; then
+    cp "${DOWNLOAD_URL#file://}" "$PLUGIN_TMP_FILE"
+  elif type "curl" > /dev/null; then
     curl -L "$DOWNLOAD_URL" -o "$PLUGIN_TMP_FILE"
   elif type "wget" > /dev/null; then
     wget -q -O "$PLUGIN_TMP_FILE" "$DOWNLOAD_URL"
