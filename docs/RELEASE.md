@@ -61,8 +61,8 @@ The GitHub Actions workflow will automatically:
 3. Build binaries for all supported platforms:
    - linux-amd64
    - linux-arm64
-   - darwin-amd64
    - darwin-arm64
+   - ~~darwin-amd64~~ (not currently supported in automated builds)
 4. Create a GitHub release with the generated artifacts
 5. Generate release notes
 
@@ -85,7 +85,7 @@ After the release is published:
 1. Check that all artifacts are correctly attached to the GitHub release
 2. Verify that the plugin can be installed using:
    ```bash
-   helm plugin install https://github.com/yourusername/helm-whatup
+   helm plugin install https://github.com/lucas-albers-lz4/helm-whatup
    ```
 3. Test the plugin functionality
 

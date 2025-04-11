@@ -13,8 +13,8 @@
 - ✅ Configured build matrix for all supported platforms:
   - linux-amd64
   - linux-arm64
-  - darwin-amd64
   - darwin-arm64
+  - ~~darwin-amd64~~ (excluded from automated builds)
 - ✅ Set up both manual and tag-based release triggers
 - ✅ Implemented artifact collection and GitHub release creation
 
