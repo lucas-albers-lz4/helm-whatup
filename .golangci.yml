@@ -1,0 +1,142 @@
+# .golangci.yml
+#version:
+#   value : 2
+version: "2"
+run:
+  go: "1.24"
+  timeout: 5m
+  issues-exit-code: 1
+  tests: true
+#  build-tags:
+#    - integration
+
+linters:
+  enable:
+    # Defaults (optional to list)
+    - errcheck
+    - govet
+    - ineffassign
+    - staticcheck
+    - unused
+
+    # Tier 1 additions
+    - gosec
+    - errorlint
+    - wrapcheck
+    - bodyclose
+    - noctx
+    - nilerr      # Consider enabling nilerr, nilnil, nilnesserr together
+    - nilnil
+    - nilnesserr
+    - copyloopvar
+
+    # Tier 2 additions (add incrementally)
+    - revive
+    - gocritic
+    - misspell
+    - goconst
+    - predeclared
+    - lll
+    - mnd
+    - dupl
+    - funlen
+    
+    # Additionally recommended linters
+    - whitespace
+    - asciicheck
+
+  disable:
+    - gomoddirectives
+    - godot
+  settings:
+    depguard:
+      rules:
+        Main:
+          allow:
+            - $standard
+            - "github.com/lalbers/irr/pkg"
+            - "github.com/spf13/cobra"
+            - "github.com/spf13/pflag"
+            - "os"
+            - "fmt"
+            - "log"
+            - "strings"
+        Pkg:
+          allow:
+            - $standard
+            - "github.com/lalbers/irr/pkg"
+            - "helm.sh/helm/v3"
+            - "sigs.k8s.io/yaml"
+            - "gopkg.in/yaml.v3"
+            - "github.com/pkg/errors"
+        Test:
+          allow:
+            - $standard
+            - "github.com/lalbers/irr/pkg"
+            - "github.com/stretchr/testify"
+            - "helm.sh/helm/v3"
+            - "sigs.k8s.io/yaml"
+            - "gopkg.in/yaml.v3"
+    errcheck:
+      check-type-assertions: true
+      check-blank: true
+    gocritic:
+      enabled-tags:
+        - diagnostic
+        - experimental
+        - opinionated
+        - performance
+        - style
+      # Example: Disable specific checks after reviewing their output
+      # disabled-checks:
+      #   - hugeParam
+      #   - rangeValCopy
+      #   - exitAfterDefer
+    lll:
+      line-length: 210
+    nolintlint:
+      allow-unused: false
+      require-explanation: true
+      require-specific: true
+    mnd:
+      # Comma-separated list of checks to enable
+      # Recommended: argument, assign, case, condition, return, operation
+      checks:
+        - argument
+        - assign
+        - case
+        - condition
+        - return
+        - operation
+      # Comma-separated list of numbers to ignore
+      ignored-numbers:
+        - "0"
+        - "1"
+        - "-1"
+        - "80"
+        - "443"
+      # You can also ignore specific types or functions if needed
+      # ignored-functions: ...
+      # ignored-types: ...
+    goconst:
+      # Minimum length of string literals to consider
+      min-len: 3 # Default is 3, adjust if needed
+      # Minimum occurrences of a string literal to report
+      min-occurrences: 3 # Default is 3, adjust if needed
+      # ignore-tests: true # Optionally ignore strings in test files
+    dupl:
+      # Threshold for code duplication token sequence length
+      threshold: 100 # Default is 100, adjust based on findings (lower finds more duplicates)
+    # wrapcheck section removed because the property names were causing validation errors
+    misspell:
+      locale: US # Default is US. Use 'UK' for British English.
+      # ignore-words: # Add list of custom words to ignore if needed
+      #   - mycustomword
+    funlen:
+      lines: 200
+      statements: 65
+
+issues:
+  max-issues-per-linter: 0
+  max-same-issues: 0
+  # exclude-rules section removed because the property names were causing validation errors
