@@ -24,13 +24,13 @@ this is how recommend doing it.
 
 First, set up your environment:
 
-- You need to have [Go](http://golang.org) installed. Make sure to set `$GOPATH`
-- If you don't have [Glide](http://glide.sh) installed, this will install it into
-  `$GOPATH/bin` for you.
+- You need to have [Go](http://golang.org) installed (version 1.18+). Make sure to set `$GOPATH`
+- This project uses Go modules for dependency management
 
 Clone this repo into your `$GOPATH` using git.
 
 ```
+mkdir -p $GOPATH/src/github.com/bacongobbler
 cd $GOPATH/src/github.com/bacongobbler
 git clone https://github.com/bacongobbler/helm-whatup
 ```
@@ -43,5 +43,18 @@ $ make bootstrap build
 $ SKIP_BIN_INSTALL=1 helm plugin install $GOPATH/src/github.com/bacongobbler/helm-whatup
 ```
 
-That last command will skip fetching the binary install and use the one you
-built.
+That last command will skip fetching the binary install and use the one you built.
+
+## Running Tests
+
+The project includes unit tests that can be run with:
+
+```
+$ make test
+```
+
+For code linting, you can use:
+
+```
+$ make lint
+```
