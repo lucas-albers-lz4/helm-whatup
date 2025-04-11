@@ -10,10 +10,7 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
-	"k8s.io/helm/pkg/proto/hapi/chart"
-	"k8s.io/helm/pkg/proto/hapi/release"
 	"k8s.io/helm/pkg/proto/hapi/services"
-	"k8s.io/helm/pkg/repo"
 )
 
 // MockHelmClient mocks the Helm client interface for testing
@@ -24,59 +21,31 @@ type MockHelmClient struct {
 // List mocks the List method of the Helm client
 func (m *MockHelmClient) List() (*services.ListReleasesResponse, error) {
 	args := m.Called()
-	return args.Get(0).(*services.ListReleasesResponse), args.Error(1)
+	if args.Get(0) == nil {
+		return nil, fmt.Errorf("mock error: %w", args.Error(1))
+	}
+
+	result, ok := args.Get(0).(*services.ListReleasesResponse)
+	if !ok {
+		return nil, fmt.Errorf("invalid type assertion for mock response")
+	}
+
+	return result, fmt.Errorf("mock error: %w", args.Error(1))
 }
 
 // ReleaseContent mocks the ReleaseContent method needed for the helm.Client interface
 func (m *MockHelmClient) ReleaseContent(releaseName string) (*services.GetReleaseContentResponse, error) {
 	args := m.Called(releaseName)
-	return args.Get(0).(*services.GetReleaseContentResponse), args.Error(1)
-}
-
-// Setup test data
-func setupTestReleases() []*release.Release {
-	return []*release.Release{
-		{
-			Name: "test-release-1",
-			Chart: &chart.Chart{
-				Metadata: &chart.Metadata{
-					Name:    "test-chart",
-					Version: "1.0.0",
-				},
-			},
-		},
-		{
-			Name: "test-release-2",
-			Chart: &chart.Chart{
-				Metadata: &chart.Metadata{
-					Name:    "another-chart",
-					Version: "2.0.0",
-				},
-			},
-		},
-	}
-}
-
-// Setup test repositories
-func setupTestIndices() []*repo.IndexFile {
-	chartVersions := []*repo.ChartVersion{
-		{
-			Metadata: &chart.Metadata{
-				Name:    "test-chart",
-				Version: "1.1.0", // newer version available
-			},
-		},
+	if args.Get(0) == nil {
+		return nil, fmt.Errorf("mock error: %w", args.Error(1))
 	}
 
-	chartEntries := map[string]repo.ChartVersions{
-		"test-chart": chartVersions,
+	result, ok := args.Get(0).(*services.GetReleaseContentResponse)
+	if !ok {
+		return nil, fmt.Errorf("invalid type assertion for mock response")
 	}
 
-	return []*repo.IndexFile{
-		{
-			Entries: chartEntries,
-		},
-	}
+	return result, fmt.Errorf("mock error: %w", args.Error(1))
 }
 
 // Test the ChartVersionInfo struct
@@ -111,7 +80,10 @@ func TestJSONOutput(t *testing.T) {
 
 	// Redirect stdout to capture output
 	oldStdout := os.Stdout
-	r, w, _ := os.Pipe()
+	r, w, err := os.Pipe()
+	if err != nil {
+		t.Fatalf("Failed to create pipe: %v", err)
+	}
 	os.Stdout = w
 
 	// Execute the function we want to test (just the JSON output part)
@@ -123,7 +95,10 @@ func TestJSONOutput(t *testing.T) {
 	assert.NoError(t, err)
 
 	// Reset stdout and read captured output
-	w.Close()
+	err = w.Close()
+	if err != nil {
+		t.Fatalf("Failed to close writer: %v", err)
+	}
 	os.Stdout = oldStdout
 	var buf bytes.Buffer
 	_, err = io.Copy(&buf, r)

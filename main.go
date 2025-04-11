@@ -1,3 +1,5 @@
+// Package main provides a Helm plugin to check for outdated chart releases.
+// It compares installed chart versions with the latest available versions in repositories.
 package main
 
 import (
@@ -16,13 +18,24 @@ import (
 	"k8s.io/helm/pkg/tlsutil"
 )
 
-const globalUsage = `
-Check to see if there is an updated version available for installed charts.
-`
+// Output format options
+const (
+	outputFormatPlain = "plain"
+	outputFormatShort = "short"
+	outputFormatJSON  = "json"
+	outputFormatYAML  = "yaml"
+	outputFormatYML   = "yml"
+	outputFormatTable = "table"
+)
+
+// Status constants for chart versions
+const (
+	statusOutdated = "OUTDATED"
+	statusUptodate = "UPTODATE"
+)
 
 var (
 	outputFormat string
-	settings     environment.EnvSettings
 	devel        bool
 	tlsEnable    bool
 	tlsHostname  string
@@ -34,11 +47,8 @@ var (
 
 var version = "canary"
 
-const (
-	statusOutdated = "OUTDATED"
-	statusUptodate = "UPTODATE"
-)
-
+// ChartVersionInfo stores information about a chart's version status
+// including the installed version and the latest available version.
 type ChartVersionInfo struct {
 	ReleaseName      string `json:"releaseName"`
 	ChartName        string `json:"chartName"`
@@ -56,7 +66,7 @@ func main() {
 
 	f := cmd.Flags()
 
-	f.StringVarP(&outputFormat, "output", "o", "plain", "output format. Accepted formats: plain, json, yaml, table, short")
+	f.StringVarP(&outputFormat, "output", "o", outputFormatPlain, "output format. Accepted formats: plain, json, yaml, table, short")
 	f.BoolVarP(&devel, "devel", "d", false, "whether to include pre-releases or not")
 	f.BoolVar(&tlsEnable, "tls", false, "enable TLS for requests to the server")
 	f.StringVar(&tlsCaCert, "tls-ca-cert", "", "path to TLS CA certificate file")
@@ -134,7 +144,7 @@ func newClient() (*helm.Client, error) {
 
 		tlscfg, err := tlsutil.ClientConfig(tlsopts)
 		if err != nil {
-			return nil, err
+			return nil, fmt.Errorf("failed to create TLS client config: %w", err)
 		}
 
 		opts = append(opts, helm.WithTLS(tlscfg))
@@ -143,7 +153,7 @@ func newClient() (*helm.Client, error) {
 	return helm.NewClient(opts...), nil
 }
 
-func run(cmd *cobra.Command, args []string) error {
+func run(_ *cobra.Command, _ []string) error {
 	client, err := newClient()
 	if err != nil {
 		return err
@@ -160,14 +170,14 @@ func run(cmd *cobra.Command, args []string) error {
 	}
 
 	if len(releases) == 0 {
-		if outputFormat == "plain" {
+		if outputFormat == outputFormatPlain {
 			fmt.Println("No releases found. All up to date!")
 		}
 		return nil
 	}
 
 	if len(repositories) == 0 {
-		if outputFormat == "plain" {
+		if outputFormat == outputFormatPlain {
 			fmt.Println("No repositories found. Did you run `helm repo update`?")
 		}
 		return nil
@@ -177,73 +187,78 @@ func run(cmd *cobra.Command, args []string) error {
 
 	for _, release := range releases {
 		for _, idx := range repositories {
-			if idx.Has(release.Chart.Metadata.Name, release.Chart.Metadata.Version) {
-				// fetch latest release
-				constraint := ""
-				// Include pre-releases
-				if devel {
-					constraint = ">= *-0"
-				}
-				chartVer, err := idx.Get(release.Chart.Metadata.Name, constraint)
-				if err != nil {
-					return err
-				}
-
-				versionStatus := ChartVersionInfo{
-					ReleaseName:      release.Name,
-					ChartName:        release.Chart.Metadata.Name,
-					InstalledVersion: release.Chart.Metadata.Version,
-					LatestVersion:    chartVer.Version,
-				}
-
-				if versionStatus.InstalledVersion == versionStatus.LatestVersion {
-					versionStatus.Status = statusUptodate
-				} else {
-					versionStatus.Status = statusOutdated
-				}
-				result = append(result, versionStatus)
+			if !idx.Has(release.Chart.Metadata.Name, release.Chart.Metadata.Version) {
+				continue
 			}
+
+			// fetch latest release
+			constraint := ""
+			// Include pre-releases
+			if devel {
+				constraint = ">= *-0"
+			}
+			chartVer, err := idx.Get(release.Chart.Metadata.Name, constraint)
+			if err != nil {
+				return fmt.Errorf("failed to get chart version: %w", err)
+			}
+
+			versionStatus := ChartVersionInfo{
+				ReleaseName:      release.Name,
+				ChartName:        release.Chart.Metadata.Name,
+				InstalledVersion: release.Chart.Metadata.Version,
+				LatestVersion:    chartVer.Version,
+			}
+
+			if versionStatus.InstalledVersion == versionStatus.LatestVersion {
+				versionStatus.Status = statusUptodate
+			} else {
+				versionStatus.Status = statusOutdated
+			}
+			result = append(result, versionStatus)
 		}
 	}
 
 	switch outputFormat {
-	case "plain":
+	case outputFormatPlain:
 		for _, versionInfo := range result {
 			if versionInfo.LatestVersion != versionInfo.InstalledVersion {
-				fmt.Printf("There is an update available for release %s (%s)!\nInstalled version: %s\nAvailable version: %s\n", versionInfo.ReleaseName, versionInfo.ChartName, versionInfo.InstalledVersion, versionInfo.LatestVersion)
+				fmt.Printf("There is an update available for release %s (%s)!\n"+
+					"Installed version: %s\n"+
+					"Available version: %s\n",
+					versionInfo.ReleaseName,
+					versionInfo.ChartName,
+					versionInfo.InstalledVersion,
+					versionInfo.LatestVersion)
 			} else {
 				fmt.Printf("Release %s (%s) is up to date.\n", versionInfo.ReleaseName, versionInfo.LatestVersion)
 			}
 		}
 		fmt.Println("Done.")
-	case "short":
+	case outputFormatShort:
 		for _, versionInfo := range result {
 			if versionInfo.LatestVersion != versionInfo.InstalledVersion {
 				fmt.Printf("%s (%s): %s --> %s\n", versionInfo.ReleaseName, versionInfo.ChartName, versionInfo.InstalledVersion, versionInfo.LatestVersion)
 			}
 		}
-	case "json":
+	case outputFormatJSON:
 		outputBytes, err := json.MarshalIndent(result, "", "    ")
 		if err != nil {
-			return err
+			return fmt.Errorf("failed to marshal JSON: %w", err)
 		}
 		fmt.Println(string(outputBytes))
-	case "yml":
-		fallthrough
-	case "yaml":
+	case outputFormatYML, outputFormatYAML:
 		outputBytes, err := yaml.Marshal(result)
 		if err != nil {
-			return err
+			return fmt.Errorf("failed to marshal YAML: %w", err)
 		}
 		fmt.Println(string(outputBytes))
-	case "table":
+	case outputFormatTable:
 		table := uitable.New()
 		table.AddRow("RELEASE", "CHART", "INSTALLED_VERSION", "LATEST_VERSION", "STATUS")
 		for _, versionInfo := range result {
 			table.AddRow(versionInfo.ReleaseName, versionInfo.ChartName, versionInfo.InstalledVersion, versionInfo.LatestVersion, versionInfo.Status)
 		}
 		fmt.Println(table)
-
 	default:
 		return fmt.Errorf("invalid formatter: %s", outputFormat)
 	}
@@ -254,7 +269,7 @@ func run(cmd *cobra.Command, args []string) error {
 func fetchReleases(client *helm.Client) ([]*release.Release, error) {
 	res, err := client.ListReleases()
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("failed to list releases: %w", err)
 	}
 	if res == nil {
 		return []*release.Release{}, nil
@@ -262,17 +277,17 @@ func fetchReleases(client *helm.Client) ([]*release.Release, error) {
 	return res.Releases, nil
 }
 
-func fetchIndices(client *helm.Client) ([]*repo.IndexFile, error) {
+func fetchIndices(_ *helm.Client) ([]*repo.IndexFile, error) {
 	indices := []*repo.IndexFile{}
 	rfp := os.Getenv("HELM_PATH_REPOSITORY_FILE")
 	repofile, err := repo.LoadRepositoriesFile(rfp)
 	if err != nil {
-		return nil, fmt.Errorf("could not load repositories file '%s': %s", rfp, err)
+		return nil, fmt.Errorf("could not load repositories file '%s': %w", rfp, err)
 	}
 	for _, repository := range repofile.Repositories {
 		idx, err := repo.LoadIndexFile(repository.Cache)
 		if err != nil {
-			return nil, fmt.Errorf("could not load index file '%s': %s", repository.Cache, err)
+			return nil, fmt.Errorf("could not load index file '%s': %w", repository.Cache, err)
 		}
 		indices = append(indices, idx)
 	}

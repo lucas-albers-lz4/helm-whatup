@@ -24,6 +24,14 @@ dist:
 lint:
 	golangci-lint run ./...
 
+.PHONY: lint-specific
+lint-specific:
+	@echo "Usage: make lint-specific LINTER=<linter-name>"
+	@echo "Example: make lint-specific LINTER=wrapcheck"
+ifdef LINTER
+	golangci-lint run --enable-only=$(LINTER) ./...
+endif
+
 .PHONY: bootstrap
 bootstrap:
 	# Initialize modules and download dependencies
