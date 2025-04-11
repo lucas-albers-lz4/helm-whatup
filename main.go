@@ -180,6 +180,11 @@ func run(_ *cobra.Command, _ []string) error {
 		}
 	}
 
+	return formatAndPrintResults(result)
+}
+
+// formatAndPrintResults formats and prints the version information based on the selected output format
+func formatAndPrintResults(result []ChartVersionInfo) error {
 	switch outputFormat {
 	case outputFormatPlain:
 		for _, versionInfo := range result {
