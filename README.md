@@ -10,7 +10,7 @@ This is a Helm plugin to help users determine if there's an update available for
 ## Supported Architectures
 
 - Linux (amd64, arm64)
-- macOS (amd64, arm64)
+- macOS (NO Intel Support, arm64)
 
 ## Usage
 
