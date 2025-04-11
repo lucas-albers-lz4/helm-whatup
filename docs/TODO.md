@@ -67,3 +67,34 @@ make build
 # Build for all supported platforms
 make dist
 ```
+
+Clone existing upstream issues so I can fix them:
+
+```python
+from github import Github
+import os
+
+# Authentication - use a Personal Access Token
+g = Github(os.environ.get("GITHUB_TOKEN"))
+
+# Source and target repositories
+source_repo = g.get_repo("original-owner/original-repo")
+target_repo = g.get_repo("your-username/your-fork")
+
+# Get all issues from source repo
+source_issues = source_repo.get_issues(state="all")
+
+# Clone each issue to the target repo
+for issue in source_issues:
+    body = f"""
+Original issue: {issue.html_url}
+
+{issue.body}
+"""
+    new_issue = target_repo.create_issue(
+        title=f"[UPSTREAM] {issue.title}",
+        body=body,
+        labels=[label.name for label in issue.labels]
+    )
+    print(f"Created issue #{new_issue.number} from upstream #{issue.number}")
+```
