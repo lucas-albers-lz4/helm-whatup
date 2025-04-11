@@ -3,7 +3,7 @@
 # Combination of the Glide and Helm scripts, with my own tweaks.
 
 PROJECT_NAME="helm-whatup"
-PROJECT_GH="bacongobbler/$PROJECT_NAME"
+PROJECT_GH="lucas-albers-lz4/$PROJECT_NAME"
 
 # Get plugin path from helm env if HELM_HOME not set
 if [ -z "$HELM_HOME" ]; then
@@ -114,7 +114,7 @@ fail_trap() {
   result=$?
   if [ "$result" != "0" ]; then
     echo "Failed to install $PROJECT_NAME"
-    echo "\tFor support, go to https://github.com/bacongobbler/helm-whatup."
+    echo "\tFor support, go to https://github.com/lucas-albers-lz4/helm-whatup."
   fi
   exit $result
 }
