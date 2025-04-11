@@ -54,7 +54,7 @@ jobs:
           tar -zcvf _dist/helm-whatup-${VERSION}-${{ matrix.goos }}-${{ matrix.goarch }}.tar.gz bin/helm-whatup README.md LICENSE plugin.yaml
           
       - name: Upload artifacts
-        uses: actions/upload-artifact@v3
+        uses: actions/upload-artifact@v4
         with:
           name: helm-whatup-${{ matrix.goos }}-${{ matrix.goarch }}
           path: _dist/*.tar.gz
@@ -68,7 +68,7 @@ jobs:
       - uses: actions/checkout@v4
       
       - name: Download all artifacts
-        uses: actions/download-artifact@v3
+        uses: actions/download-artifact@v4
         with:
           path: artifacts
           
