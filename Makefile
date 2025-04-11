@@ -19,6 +19,8 @@ dist:
 	tar -zcvf $(DIST)/helm-whatup-$(VERSION)-linux-amd64.tar.gz bin/helm-whatup README.md LICENSE plugin.yaml
 	GOOS=darwin GOARCH=amd64 go build -o bin/helm-whatup ./main.go
 	tar -zcvf $(DIST)/helm-whatup-$(VERSION)-darwin-amd64.tar.gz bin/helm-whatup README.md LICENSE plugin.yaml
+	GOOS=darwin GOARCH=arm64 go build -o bin/helm-whatup ./main.go
+	tar -zcvf $(DIST)/helm-whatup-$(VERSION)-darwin-arm64.tar.gz bin/helm-whatup README.md LICENSE plugin.yaml
 
 .PHONY: lint
 lint:
