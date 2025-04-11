@@ -6,16 +6,16 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"path/filepath"
 
 	"github.com/gosuri/uitable"
 	"github.com/spf13/cobra"
 	"gopkg.in/yaml.v2"
 
-	"k8s.io/helm/pkg/helm"
-	"k8s.io/helm/pkg/helm/environment"
-	"k8s.io/helm/pkg/proto/hapi/release"
-	"k8s.io/helm/pkg/repo"
-	"k8s.io/helm/pkg/tlsutil"
+	"helm.sh/helm/v3/pkg/action"
+	"helm.sh/helm/v3/pkg/cli"
+	"helm.sh/helm/v3/pkg/release"
+	"helm.sh/helm/v3/pkg/repo"
 )
 
 // Output format options
@@ -80,91 +80,37 @@ func main() {
 	}
 }
 
-func newClient() (*helm.Client, error) {
-	opts := []helm.Option{}
+func newClient() (*action.Configuration, error) {
+	settings := cli.New()
+	actionConfig := new(action.Configuration)
 
-	helmHost := os.Getenv("TILLER_HOST")
-
-	if helmHost == "" {
-		return nil, fmt.Errorf("TILLER_HOST was not set by Helm")
+	// Initialize action configuration
+	if err := actionConfig.Init(settings.RESTClientGetter(), settings.Namespace(), os.Getenv("HELM_DRIVER"), debug); err != nil {
+		return nil, fmt.Errorf("failed to initialize Helm client: %w", err)
 	}
 
-	opts = append(opts, helm.Host(helmHost))
+	return actionConfig, nil
+}
 
-	// priority order for reading in configuration:
-	//
-	// 1. flags
-	// 2. environment variables
-	// 3. defaults
-
-	if tlsHostname == "" {
-		tlsHostname = os.Getenv("HELM_TLS_HOSTNAME")
-		if tlsHostname == "" {
-			tlsHostname = helmHost
-		}
+func debug(format string, v ...interface{}) {
+	// Suppress debug output by default
+	if os.Getenv("HELM_DEBUG") != "" {
+		fmt.Fprintf(os.Stderr, format, v...)
 	}
-
-	if tlsCaCert == "" {
-		tlsCaCert = os.Getenv("HELM_TLS_CA_CERT")
-		if tlsCaCert == "" {
-			tlsCaCert = os.ExpandEnv(environment.DefaultTLSCaCert)
-		}
-	}
-
-	if tlsCert == "" {
-		tlsCert = os.Getenv("HELM_TLS_CERT")
-		if tlsCert == "" {
-			tlsCert = os.ExpandEnv(environment.DefaultTLSCert)
-		}
-	}
-
-	if tlsKey == "" {
-		tlsKey = os.Getenv("HELM_TLS_KEY")
-		if tlsKey == "" {
-			tlsKey = os.ExpandEnv(environment.DefaultTLSKeyFile)
-		}
-	}
-
-	if !tlsEnable {
-		tlsEnable = os.Getenv("HELM_TLS_ENABLE") != ""
-	}
-
-	if !tlsVerify {
-		tlsVerify = os.Getenv("HELM_TLS_VERIFY") != ""
-	}
-
-	if tlsEnable || tlsVerify {
-		tlsopts := tlsutil.Options{
-			ServerName:         tlsHostname,
-			CaCertFile:         tlsCaCert,
-			CertFile:           tlsCert,
-			KeyFile:            tlsKey,
-			InsecureSkipVerify: !tlsVerify,
-		}
-
-		tlscfg, err := tlsutil.ClientConfig(tlsopts)
-		if err != nil {
-			return nil, fmt.Errorf("failed to create TLS client config: %w", err)
-		}
-
-		opts = append(opts, helm.WithTLS(tlscfg))
-	}
-
-	return helm.NewClient(opts...), nil
 }
 
 func run(_ *cobra.Command, _ []string) error {
-	client, err := newClient()
+	actionConfig, err := newClient()
 	if err != nil {
 		return err
 	}
 
-	releases, err := fetchReleases(client)
+	releases, err := fetchReleases(actionConfig)
 	if err != nil {
 		return err
 	}
 
-	repositories, err := fetchIndices(client)
+	repositories, err := fetchIndices()
 	if err != nil {
 		return err
 	}
@@ -186,27 +132,40 @@ func run(_ *cobra.Command, _ []string) error {
 	var result []ChartVersionInfo
 
 	for _, release := range releases {
+		chartName := release.Chart.Metadata.Name
+		chartVersion := release.Chart.Metadata.Version
+
+		// Check each repository for this chart
 		for _, idx := range repositories {
-			if !idx.Has(release.Chart.Metadata.Name, release.Chart.Metadata.Version) {
+			// Check if the chart exists in this repository
+			entries, exists := idx.Entries[chartName]
+			if !exists || len(entries) == 0 {
 				continue
 			}
 
-			// fetch latest release
-			constraint := ""
-			// Include pre-releases
-			if devel {
-				constraint = ">= *-0"
+			// Find the latest version
+			var latestVersion string
+
+			// Sort versions (already sorted in the index)
+			// Get the latest version
+			for _, entry := range entries {
+				// If devel is false and this is a prerelease, skip it
+				if !devel && entry.APIVersion == "prerelease" {
+					continue
+				}
+				latestVersion = entry.Version
+				break
 			}
-			chartVer, err := idx.Get(release.Chart.Metadata.Name, constraint)
-			if err != nil {
-				return fmt.Errorf("failed to get chart version: %w", err)
+
+			if latestVersion == "" {
+				continue
 			}
 
 			versionStatus := ChartVersionInfo{
 				ReleaseName:      release.Name,
-				ChartName:        release.Chart.Metadata.Name,
-				InstalledVersion: release.Chart.Metadata.Version,
-				LatestVersion:    chartVer.Version,
+				ChartName:        chartName,
+				InstalledVersion: chartVersion,
+				LatestVersion:    latestVersion,
 			}
 
 			if versionStatus.InstalledVersion == versionStatus.LatestVersion {
@@ -215,6 +174,9 @@ func run(_ *cobra.Command, _ []string) error {
 				versionStatus.Status = statusOutdated
 			}
 			result = append(result, versionStatus)
+
+			// Found a match for this chart, no need to check other repositories
+			break
 		}
 	}
 
@@ -266,30 +228,46 @@ func run(_ *cobra.Command, _ []string) error {
 	return nil
 }
 
-func fetchReleases(client *helm.Client) ([]*release.Release, error) {
-	res, err := client.ListReleases()
+func fetchReleases(actionConfig *action.Configuration) ([]*release.Release, error) {
+	listAction := action.NewList(actionConfig)
+	// Configure the list action
+	listAction.All = true
+	listAction.AllNamespaces = false
+
+	releases, err := listAction.Run()
 	if err != nil {
 		return nil, fmt.Errorf("failed to list releases: %w", err)
 	}
-	if res == nil {
-		return []*release.Release{}, nil
-	}
-	return res.Releases, nil
+	return releases, nil
 }
 
-func fetchIndices(_ *helm.Client) ([]*repo.IndexFile, error) {
+func fetchIndices() ([]*repo.IndexFile, error) {
 	indices := []*repo.IndexFile{}
-	rfp := os.Getenv("HELM_PATH_REPOSITORY_FILE")
-	repofile, err := repo.LoadRepositoriesFile(rfp)
+	settings := cli.New()
+
+	// Get repositories file
+	repoFile := settings.RepositoryConfig
+
+	// Load repositories
+	repoFileData, err := repo.LoadFile(repoFile)
 	if err != nil {
-		return nil, fmt.Errorf("could not load repositories file '%s': %w", rfp, err)
+		return nil, fmt.Errorf("failed to load repository file: %w", err)
 	}
-	for _, repository := range repofile.Repositories {
-		idx, err := repo.LoadIndexFile(repository.Cache)
+
+	for _, repoEntry := range repoFileData.Repositories {
+		// Construct the index file path
+		indexFileName := repoEntry.Name + "-index.yaml"
+		cachePath := filepath.Join(settings.RepositoryCache, indexFileName)
+
+		// Load the index file
+		indexFile, err := repo.LoadIndexFile(cachePath)
 		if err != nil {
-			return nil, fmt.Errorf("could not load index file '%s': %w", repository.Cache, err)
+			// Skip repositories with errors
+			continue
 		}
-		indices = append(indices, idx)
+
+		indices = append(indices, indexFile)
 	}
+
 	return indices, nil
 }
