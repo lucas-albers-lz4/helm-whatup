@@ -1,44 +1,60 @@
 # Implementation Plan: Go Version Upgrade & Unit Testing
 
-## Completed Tasks
+## Phase 1: Platform Support & Release Automation ✅
 
-### Dependency Modernization
-- Migrated from dep/Gopkg to Go modules
-  - Created go.mod with proper module path
-  - Added replace directive for `github.com/imdario/mergo => dario.cat/mergo`
-  - Removed Gopkg.toml and Gopkg.lock
-- Updated dependencies to compatible versions
-- Updated Makefile with Go modules support
+### Cross-Platform Binary Support
+- ✅ Added support for Apple Silicon Macs (darwin-arm64)
+- ✅ Added support for ARM64 Linux (linux-arm64)
+- ✅ Updated Makefile with cross-platform build targets
+- ✅ Updated installation script to detect and support new architectures
 
-### Code Quality & Testing
-- Added basic unit tests with proper mocking
-- Fixed all linting issues:
-  - Error handling: Wrapped all errors from external packages with proper context
-  - Code style: Added package comments, function documentation, and constants
-  - Clean code: Removed unused variables, renamed unused parameters
-  - Formatting: Fixed long lines and improved readability
+### Automated Release Process
+- ✅ Created GitHub Actions workflow for automated releases
+- ✅ Configured build matrix for all supported platforms:
+  - linux-amd64
+  - linux-arm64
+  - darwin-amd64
+  - darwin-arm64
+- ✅ Set up both manual and tag-based release triggers
+- ✅ Implemented artifact collection and GitHub release creation
 
-### Build Infrastructure
-- Enhanced bootstrap process for dependency management
-- Added lint targets to Makefile for quality checks
-- Added test target for running unit tests
+### GitHub Actions Setup
+- ✅ Created workflow file in `.github/workflows/release.yml`
+- ✅ Configured the workflow to:
+  - Trigger manually and on tag creation
+  - Build for all supported platforms (linux-amd64, linux-arm64, darwin-amd64, darwin-arm64)
+  - Run tests before building
+  - Create GitHub release with built artifacts
+  - Add release notes automatically
 
-## Remaining Tasks
+### Release Process
+1. Update version in plugin.yaml
+2. Commit changes
+3. Create and push a new tag
+4. GitHub Actions will automatically build and publish the release
+5. Or manually trigger the workflow using the "workflow_dispatch" event
 
-### Code Migration
-- Update any deprecated Go language features
-- Update code to use newer dependency APIs
-- Fix any breaking changes in the dependencies
+## Phase 3: Testing & CI/CD
 
 ### Testing
+- Add basic unit tests with proper mocking
 - Add tests for fetchReleases and fetchIndices functions
 - Add tests for other formatting outputs (plain, yaml, table)
 - Implement integration tests if needed
-- Add GitHub Actions or other CI/CD workflow for automated testing
+
+### Build Infrastructure
+- Enhance bootstrap process for dependency management
+- Add lint targets to Makefile for quality checks
+- Add test target for running unit tests
+- Configure GitHub Actions for continuous integration
+
+## Phase 4: Documentation & Release
 
 ### Documentation & Finalization
 - Update version information in plugin.yaml
+- Update README.md with updated platform support
 - Create release notes for the upgrade
+- Document development workflow
 
 ### Release
 - Create a new release with updated binary artifacts
@@ -98,3 +114,10 @@ Original issue: {issue.html_url}
     )
     print(f"Created issue #{new_issue.number} from upstream #{issue.number}")
 ```
+
+NOTES:
+Install dependencies: pip install PyGithub
+Create a GitHub Personal Access Token with 'repo' scope
+Set it as an environment variable: export GITHUB_TOKEN=your_token_here
+Customize the repo paths and run the script
+This will create copies of all 6 issues in your fork, clearly labeled as upstream issues with links back to the originals.
