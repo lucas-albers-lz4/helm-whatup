@@ -28,6 +28,7 @@
   - Add release notes automatically
 
 ### Release Process
+- ✅ Created detailed release documentation in docs/RELEASE.md
 1. Update version in plugin.yaml
 2. Commit changes
 3. Create and push a new tag
