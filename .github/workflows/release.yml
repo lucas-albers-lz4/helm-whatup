@@ -1,0 +1,89 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Version to release (e.g., v0.2.2)'
+        required: true
+
+jobs:
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: 1.24
+      - name: golangci-lint
+        uses: golangci/golangci-lint-action@v7
+        with:
+          version: v2.0
+
+  build:
+    needs: lint
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        goos: [linux, darwin]
+        goarch: [amd64, arm64]
+
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: 1.24
+          
+      - name: Run tests
+        run: make test
+        
+      - name: Build binary
+        run: |
+          VERSION=$(cat plugin.yaml | grep version | awk -F'"' '{print $2}')
+          GOOS=${{ matrix.goos }} GOARCH=${{ matrix.goarch }} go build -o bin/helm-whatup -ldflags "-X main.version=${VERSION}" ./main.go
+          
+      - name: Create distribution package
+        run: |
+          mkdir -p _dist
+          VERSION=$(cat plugin.yaml | grep version | awk -F'"' '{print $2}')
+          tar -zcvf _dist/helm-whatup-${VERSION}-${{ matrix.goos }}-${{ matrix.goarch }}.tar.gz bin/helm-whatup README.md LICENSE plugin.yaml
+          
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v3
+        with:
+          name: helm-whatup-${{ matrix.goos }}-${{ matrix.goarch }}
+          path: _dist/*.tar.gz
+          retention-days: 1
+
+  release:
+    needs: build
+    runs-on: ubuntu-latest
+    
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: Download all artifacts
+        uses: actions/download-artifact@v3
+        with:
+          path: artifacts
+          
+      - name: Prepare release files
+        run: |
+          mkdir -p release-files
+          find artifacts -name "*.tar.gz" -exec cp {} release-files/ \;
+          
+      - name: Create Release
+        uses: softprops/action-gh-release@v1
+        with:
+          files: release-files/*.tar.gz
+          draft: false
+          prerelease: false
+          generate_release_notes: true
+          tag_name: ${{ github.event.inputs.version || github.ref_name }}
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }} 
