@@ -35,6 +35,12 @@ const (
 	statusUptodate = "UPTODATE"
 )
 
+// Constants for URL parsing
+const (
+	minURLParts    = 3 // Minimum parts in a URL when split by "/"
+	minDomainParts = 2 // Minimum parts in a domain when split by "."
+)
+
 var (
 	outputFormat string
 	devel        bool
@@ -127,20 +133,7 @@ func run(_ *cobra.Command, _ []string) error {
 	}
 
 	// Create a map of chart names to repositories for quick lookup
-	chartRepoMap := make(map[string]string)
-	for _, repo := range repoFileData.Repositories {
-		// Get the index file for this repository
-		for _, idx := range repositories {
-			// Check each chart in this repository
-			for chartName := range idx.Entries {
-				// Associate this chart with this repository
-				// Only if not already set or if the repository name matches the chart name partly
-				if _, exists := chartRepoMap[chartName]; !exists || strings.Contains(repo.Name, chartName) {
-					chartRepoMap[chartName] = repo.Name
-				}
-			}
-		}
-	}
+	chartRepoMap := buildChartRepoMap(repositories, repoFileData)
 
 	if len(releases) == 0 {
 		if outputFormat == outputFormatPlain {
@@ -159,6 +152,53 @@ func run(_ *cobra.Command, _ []string) error {
 	// Create a warning message buffer
 	var warnings []string
 
+	// Process releases and build result
+	result := processReleases(
+		releases,
+		repositories,
+		repoFileData,
+		chartRepoMap,
+		&warnings,
+	)
+
+	// Print collected warnings if in plain format
+	if outputFormat == outputFormatPlain && len(warnings) > 0 {
+		fmt.Println()
+		for _, warning := range warnings {
+			fmt.Printf("WARNING: %s\n", warning)
+		}
+	}
+
+	return formatAndPrintResults(result)
+}
+
+// buildChartRepoMap creates a map of chart names to repository names
+func buildChartRepoMap(repositories []*repo.IndexFile, repoFileData *repo.File) map[string]string {
+	chartRepoMap := make(map[string]string)
+	for _, repo := range repoFileData.Repositories {
+		// Get the index file for this repository
+		for _, idx := range repositories {
+			// Check each chart in this repository
+			for chartName := range idx.Entries {
+				// Associate this chart with this repository
+				// Only if not already set or if the repository name matches the chart name partly
+				if _, exists := chartRepoMap[chartName]; !exists || strings.Contains(repo.Name, chartName) {
+					chartRepoMap[chartName] = repo.Name
+				}
+			}
+		}
+	}
+	return chartRepoMap
+}
+
+// processReleases processes the releases and builds the result slice
+func processReleases(
+	releases []*release.Release,
+	repositories []*repo.IndexFile,
+	repoFileData *repo.File,
+	chartRepoMap map[string]string,
+	warnings *[]string,
+) []ChartVersionInfo {
 	var result []ChartVersionInfo
 
 	for _, release := range releases {
@@ -192,99 +232,14 @@ func run(_ *cobra.Command, _ []string) error {
 			chartFound = true
 
 			// Find the latest version
-			latestVersion := ""
-
-			// Get the latest version (index is already sorted with latest first)
-			for _, entry := range entries {
-				// Skip prerelease versions if devel flag is not set
-				if !devel && entry.APIVersion == "prerelease" {
-					continue
-				}
-				latestVersion = entry.Version
-
-				// If repository name is not set, try to find it
-				if repoName == "" && len(entry.URLs) > 0 {
-					// Extract repository URL from chart URL
-					chartURL := entry.URLs[0]
-
-					// Try to match with known repositories
-					for _, repo := range repoFileData.Repositories {
-						if strings.Contains(chartURL, repo.URL) {
-							repoName = repo.Name
-							break
-						}
-					}
-				}
-
-				break
-			}
-
+			latestVersion := findLatestVersion(entries, repoFileData, &repoName)
 			if latestVersion == "" {
 				continue
 			}
 
 			// Try different methods to find the repository name
 			if repoName == "" {
-				// Method 1: Check if this chart name is a known repo
-				for _, repo := range repoFileData.Repositories {
-					if repo.Name == chartName {
-						repoName = repo.Name
-						break
-					}
-				}
-
-				// Method 2: Try to parse from index file name
-				if repoName == "" && idx.APIVersion != "" {
-					// Look for repo name in the index metadata
-					// The APIVersion field is sometimes used to store the path
-					nameFromPath := filepath.Base(idx.APIVersion)
-					if strings.HasSuffix(nameFromPath, "-index.yaml") {
-						repoName = strings.TrimSuffix(nameFromPath, "-index.yaml")
-					}
-				}
-
-				// Method 3: Match by URL patterns
-				if repoName == "" && len(entries) > 0 && len(entries[0].URLs) > 0 {
-					chartURL := entries[0].URLs[0]
-
-					// Common URL patterns
-					for _, repo := range repoFileData.Repositories {
-						if strings.Contains(chartURL, repo.URL) {
-							repoName = repo.Name
-							break
-						}
-					}
-
-					// Try to extract repo name from URL
-					if repoName == "" {
-						// Example: https://charts.bitnami.com/bitnami
-						// Extract "bitnami"
-						parts := strings.Split(chartURL, "/")
-						if len(parts) >= 3 {
-							domainParts := strings.Split(parts[2], ".")
-							if len(domainParts) >= 2 {
-								repoName = domainParts[1]
-							}
-						}
-					}
-				}
-
-				// Last resort: Check the release name
-				if repoName == "" {
-					// For example, rke2-cilium likely comes from rke2-charts
-					for _, repo := range repoFileData.Repositories {
-						prefix := strings.Split(chartName, "-")[0]
-						if strings.HasPrefix(repo.Name, prefix) {
-							repoName = repo.Name
-							break
-						}
-					}
-				}
-
-				// Final fallback
-				if repoName == "" {
-					repoName = "unknown"
-				}
+				repoName = determineRepoName(chartName, entries, idx, repoFileData)
 			}
 
 			versionStatus := ChartVersionInfo{
@@ -312,19 +267,118 @@ func run(_ *cobra.Command, _ []string) error {
 
 		// Output warning if chart's repo couldn't be determined
 		if !chartFound {
-			warnings = append(warnings, fmt.Sprintf("The source repository could not be determined for '%s'", release.Name))
+			*warnings = append(*warnings, fmt.Sprintf("The source repository could not be determined for '%s'", release.Name))
 		}
 	}
 
-	// Print collected warnings if in plain format
-	if outputFormat == outputFormatPlain && len(warnings) > 0 {
-		fmt.Println()
-		for _, warning := range warnings {
-			fmt.Printf("WARNING: %s\n", warning)
+	return result
+}
+
+// findLatestVersion finds the latest version of a chart
+func findLatestVersion(entries repo.ChartVersions, repoFileData *repo.File, repoName *string) string {
+	latestVersion := ""
+
+	// Get the latest version (index is already sorted with latest first)
+	for _, entry := range entries {
+		// Skip prerelease versions if devel flag is not set
+		if !devel && entry.APIVersion == "prerelease" {
+			continue
+		}
+		latestVersion = entry.Version
+
+		// If repository name is not set, try to find it
+		if *repoName == "" && len(entry.URLs) > 0 {
+			// Extract repository URL from chart URL
+			chartURL := entry.URLs[0]
+
+			// Try to match with known repositories
+			for _, repo := range repoFileData.Repositories {
+				if strings.Contains(chartURL, repo.URL) {
+					*repoName = repo.Name
+					break
+				}
+			}
+		}
+
+		break
+	}
+
+	return latestVersion
+}
+
+// determineRepoName determines the repository name using various methods
+func determineRepoName(chartName string, entries repo.ChartVersions, idx *repo.IndexFile, repoFileData *repo.File) string {
+	repoName := ""
+
+	// Method 1: Check if this chart name is a known repo
+	for _, repo := range repoFileData.Repositories {
+		if repo.Name == chartName {
+			repoName = repo.Name
+			break
 		}
 	}
 
-	return formatAndPrintResults(result)
+	// Method 2: Try to parse from index file name
+	if repoName == "" && idx.APIVersion != "" {
+		// Look for repo name in the index metadata
+		// The APIVersion field is sometimes used to store the path
+		nameFromPath := filepath.Base(idx.APIVersion)
+		if strings.HasSuffix(nameFromPath, "-index.yaml") {
+			repoName = strings.TrimSuffix(nameFromPath, "-index.yaml")
+		}
+	}
+
+	// Method 3: Match by URL patterns
+	if repoName == "" && len(entries) > 0 && len(entries[0].URLs) > 0 {
+		repoName = determineRepoNameFromURL(entries[0].URLs[0], repoFileData)
+	}
+
+	// Last resort: Check the release name
+	if repoName == "" {
+		// For example, rke2-cilium likely comes from rke2-charts
+		for _, repo := range repoFileData.Repositories {
+			prefix := strings.Split(chartName, "-")[0]
+			if strings.HasPrefix(repo.Name, prefix) {
+				repoName = repo.Name
+				break
+			}
+		}
+	}
+
+	// Final fallback
+	if repoName == "" {
+		repoName = "unknown"
+	}
+
+	return repoName
+}
+
+// determineRepoNameFromURL extracts repository name from a chart URL
+func determineRepoNameFromURL(chartURL string, repoFileData *repo.File) string {
+	repoName := ""
+
+	// Common URL patterns
+	for _, repo := range repoFileData.Repositories {
+		if strings.Contains(chartURL, repo.URL) {
+			repoName = repo.Name
+			break
+		}
+	}
+
+	// Try to extract repo name from URL
+	if repoName == "" {
+		// Example: https://charts.bitnami.com/bitnami
+		// Extract "bitnami"
+		parts := strings.Split(chartURL, "/")
+		if len(parts) >= minURLParts {
+			domainParts := strings.Split(parts[2], ".")
+			if len(domainParts) >= minDomainParts {
+				repoName = domainParts[1]
+			}
+		}
+	}
+
+	return repoName
 }
 
 // formatAndPrintResults formats and prints the version information based on the selected output format
@@ -346,7 +400,8 @@ func formatAndPrintResults(result []ChartVersionInfo) error {
 
 	switch outputFormat {
 	case outputFormatPlain:
-		fmt.Println("\nWARNING: Charts marked as deprecated will not be shown in the results.\n")
+		fmt.Println("\nWARNING: Charts marked as deprecated will not be shown in the results.")
+		fmt.Println()
 		for _, versionInfo := range result {
 			if versionInfo.LatestVersion != versionInfo.InstalledVersion {
 				fmt.Printf("There is an update available for release %s (%s)!\n"+
@@ -380,7 +435,8 @@ func formatAndPrintResults(result []ChartVersionInfo) error {
 		}
 		fmt.Println(string(outputBytes))
 	case outputFormatTable:
-		fmt.Println("\nWARNING: Charts marked as deprecated will not be shown in the results.\n")
+		fmt.Println("\nWARNING: Charts marked as deprecated will not be shown in the results.")
+		fmt.Println()
 
 		// Show outdated charts
 		table := uitable.New()
