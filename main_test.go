@@ -9,44 +9,7 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/assert"
-	"github.com/stretchr/testify/mock"
-	"k8s.io/helm/pkg/proto/hapi/services"
 )
-
-// MockHelmClient mocks the Helm client interface for testing
-type MockHelmClient struct {
-	mock.Mock
-}
-
-// List mocks the List method of the Helm client
-func (m *MockHelmClient) List() (*services.ListReleasesResponse, error) {
-	args := m.Called()
-	if args.Get(0) == nil {
-		return nil, fmt.Errorf("mock error: %w", args.Error(1))
-	}
-
-	result, ok := args.Get(0).(*services.ListReleasesResponse)
-	if !ok {
-		return nil, fmt.Errorf("invalid type assertion for mock response")
-	}
-
-	return result, fmt.Errorf("mock error: %w", args.Error(1))
-}
-
-// ReleaseContent mocks the ReleaseContent method needed for the helm.Client interface
-func (m *MockHelmClient) ReleaseContent(releaseName string) (*services.GetReleaseContentResponse, error) {
-	args := m.Called(releaseName)
-	if args.Get(0) == nil {
-		return nil, fmt.Errorf("mock error: %w", args.Error(1))
-	}
-
-	result, ok := args.Get(0).(*services.GetReleaseContentResponse)
-	if !ok {
-		return nil, fmt.Errorf("invalid type assertion for mock response")
-	}
-
-	return result, fmt.Errorf("mock error: %w", args.Error(1))
-}
 
 // Test the ChartVersionInfo struct
 func TestChartVersionInfo(t *testing.T) {

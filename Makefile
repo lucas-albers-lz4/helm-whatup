@@ -38,8 +38,7 @@ endif
 bootstrap:
 	# Initialize modules and download dependencies
 	go mod tidy
-	# Explicitly download modules for which we have replacements
-	go mod download k8s.io/helm
+	# Explicitly download direct dependencies
 	go mod download github.com/gosuri/uitable
 	go mod download github.com/spf13/cobra
 	go mod download gopkg.in/yaml.v2

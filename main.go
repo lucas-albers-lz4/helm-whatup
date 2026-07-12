@@ -216,8 +216,8 @@ func processReleases(
 
 		// If we haven't found a repo name, check our map
 		if repoName == "" {
-			if repo, exists := chartRepoMap[chartName]; exists {
-				repoName = repo
+			if mappedRepo, exists := chartRepoMap[chartName]; exists {
+				repoName = mappedRepo
 			}
 		}
 
